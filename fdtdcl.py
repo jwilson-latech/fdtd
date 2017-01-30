@@ -3,6 +3,12 @@ import os
 import pyopencl as cl
 import sys
 
+def nothing(object):
+    """
+    Need a function that takes in nothing, does nothing, and returns nothing to serve as placeholder function.
+    """
+    return None
+
 class ComputeNode:
     
     def __init__(self,platform_number=None,device_number=None):
@@ -14,7 +20,8 @@ class ComputeNode:
         self.queue = cl.CommandQueue(self.context)
     
     def get_platform(self):
-        """Determine the platform based on input.
+        """
+        Determine the platform based on input.
         """
         platforms = cl.get_platforms()
         if self.platform_number is None: 
@@ -40,21 +47,24 @@ class ComputeNode:
 
 class Field:
     
-    def __init__(self, compute_node, init_vals_real, init_vals_imag, prg, is_potential="no"):
+    def __init__(self, compute_node, init_vals_real, init_vals_imag, prg, update_function = nothing, is_potential="no",multistep_modifier=0):
         self.compute_node = compute_node
         self.multistep = len(init_vals_real)
         self.init_vals_real = np.float64(init_vals_real) #multistepxJxK array of real fxn values @ points evaluated at initial time steps (n=0,1,...)
         self.init_vals_imag = np.float64(init_vals_imag) #multistepxJxK array of imag fxn values @ points evaluated at initial time steps (n=0,1,...)
-        self.shape = np.append([self.multistep+1],self.init_vals_real[0].shape)
+        self.shape = np.append([2*self.multistep + multistep_modifier],self.init_vals_real[0].shape)
         self.values_real = self.setup_array_real() #set up multistepxJxK array
         self.values_imag = self.setup_array_imag() #set up multistepxJxK array
         self.values_real_dev = self.move_to_device(self.values_real) #load real values onto the device (CPU/GPU)
         self.values_imag_dev = self.move_to_device(self.values_imag) #load imag values onto the device (CPU/GPU)
         self.is_potential=(is_potential=='potential') #does this field describe a potential? 
         self.prg = prg #program for Field
+        self.update_function = update_function
+        self.thestep = 0
         
     def setup_array_real(self):
-        """Sets up up array of values to use in computation.
+        """
+        Sets up up array of values to use in computation.
         """
         array = np.zeros(self.shape) #array of zeros with new shape
         for element in range(self.multistep):
@@ -62,13 +72,11 @@ class Field:
         return array
     
     def setup_array_imag(self):
-        """Sets up up array of values to use in computation.
         """
-        #determine the shape of the data
-        SHAPE = self.init_vals_imag[0].shape 
+        Sets up up array of values to use in computation.
+        """
         
-        SHAPE = np.append([self.multistep+1],SHAPE) #shape of new array
-        array = np.zeros(SHAPE) #array of zeros with new shape
+        array = np.zeros(self.shape) #array of zeros with new shape
         for element in range(self.multistep):
             array[element]=self.init_vals_imag[element]
         return array
@@ -101,37 +109,12 @@ class Field:
     def update(self,simulationtime=None):
         """Contruct the update function that a NLSE wave will have
         """
-        op_A = self.prg.operator_A
-        gfdtd = self.prg.gfdtd
-        abc = self.prg.abc
-        restore = self.prg.restore
-        
-        U = self.values_real_dev
-        V = self.values_imag_dev
-        ctx = self.compute_node.context
-        queue = self.compute_node.queue
-        x1 = np.float64(self.init_vals_real*0)
-        A1_U=cl.Buffer(ctx, cl.mem_flags.READ_WRITE | cl.mem_flags.COPY_HOST_PTR, hostbuf=x1)
-        A2_U=cl.Buffer(ctx, cl.mem_flags.READ_WRITE | cl.mem_flags.COPY_HOST_PTR, hostbuf=x1)
-        A3_U=cl.Buffer(ctx, cl.mem_flags.READ_WRITE | cl.mem_flags.COPY_HOST_PTR, hostbuf=x1)
-        A1_V=cl.Buffer(ctx, cl.mem_flags.READ_WRITE | cl.mem_flags.COPY_HOST_PTR, hostbuf=x1)
-        A2_V=cl.Buffer(ctx, cl.mem_flags.READ_WRITE | cl.mem_flags.COPY_HOST_PTR, hostbuf=x1)
-        A3_V=cl.Buffer(ctx, cl.mem_flags.READ_WRITE | cl.mem_flags.COPY_HOST_PTR, hostbuf=x1)
-        # need to calculate A1_ and A3_. A_2 is dummy
-        op_A(queue, self.shape, None, U, V, A1_U, A1_V )
-        op_A(queue, self.shape, None, A1_U, A1_V, A2_U, A2_V )
-        op_A(queue, self.shape, None, A2_U, A2_V, A3_U, A3_V )
-        # perform GFDTD calculations
-        gfdtd(queue, self.shape, None, U, V, A1_U, A1_V, A3_U, A3_V)
-        # reconstruct boundaries
-        abc(queue, self.shape,None,U,V)
-        abc(queue, self.shape,None,U,V)
-        # set up for next cycle
-        restore(queue, self.shape, None,U,V)
+        self.update_function(self)
+        self.thestep = self.thestep + 1
         
 class Simulation:
     
-    def __init__(self,field_list,**kwargs):
+    def __init__(self,field_list,num_temps=None,**kwargs):
         self.fields = field_list #list of fields
         self.waves = [field for field in self.fields if field.is_potential==False] #list of waves
         self.potentials = [field for field in self.fields if field.is_potential==True] #list of potentials
@@ -154,9 +137,12 @@ class Simulation:
         for field in self.fields: 
             field.update()
             self.time_step = self.time_step + 1
+        
             
-class CL_Program:
-    
+class CLProgram:
+    """
+    double = False will inable single digit precision. 
+    """
     def __init__(self, context, file_name, **kwargs):
         self.context = context
         self.file_name = file_name

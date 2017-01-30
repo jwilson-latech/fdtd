@@ -4,20 +4,24 @@ import os
 import pyopencl as cl
 from numpy import pi, sqrt, cosh, exp, cos, sin
 import matplotlib.pyplot as plt
+from fullviridis import full_viridis
+import matplotlib.colors as colors
 
 
-def runSim(width,steps,snapshot,name):
+
+def main(width,steps):
     WIDTH = width
+
     ''' 
     Create space.
     '''
     a = 20
-    xx = np.linspace(-a,a,WIDTH+1)
+    xx = np.linspace(-a,a,WIDTH) 
     dx = xx[1]-xx[0]
-    xx = xx[:-1]
     sigma = 1/10.0
     dt=sigma*dx**2
     X, Y = np.meshgrid(xx, xx, sparse=True)
+
     ''' 
     Set intial conditions.
     '''
@@ -27,8 +31,8 @@ def runSim(width,steps,snapshot,name):
 
     t1=d1/180.0*pi # direction normal to curve in rad
     t2=d2/180.0*pi # direction normal to curve in rad
-    s = 2.0 # parameter. Simulation unstable for p<1
-    lamb = -4.0 # nonlinear coupling constant
+    s = 2.0 # parameter. Simulation unstable for p<2
+    lamb = -2 # nonlinear coupling constant
     k1 = np.sqrt(-lamb/2.0) # pulse width
     k2 = s*k1 # wave number
     w1 = s*k1**2*abs(np.cos(t1-t2)) # pulse 'frequency'
@@ -37,16 +41,24 @@ def runSim(width,steps,snapshot,name):
     z0=10 
 
     def exact(x,y,t):
-        ''' 
-        This is the function for the initial conditions. 
+        ''' This is the function for the initial conditions. 
         '''
-        return A0*exp(-1j*(k2*(x*cos(t2)+y*sin(t2)-z0)-w2*t))/cosh(k1*(x*cos(t1)+y*sin(t1)-z0)-w1*t)
-        
+        return A0*exp(-1j*(k2*(x*cos(t2)+y*sin(t2)-z0)-w2*t*dt/2.0))/cosh(k1*(x*cos(t1)+y*sin(t1)-z0)-w1*t*dt/2.0)
     
-    u0 = np.float64(exact(X,Y,0).real)
-    v0 = np.float64(exact(X,Y,0).imag)
-    u1 = np.float64(exact(X,Y,0.5*dt).real)
-    v1 = np.float64(exact(X,Y,0.5*dt).imag)
+    def exactr(x,y,t):
+        ''' Take the real part. 
+        '''
+        return exact(x,y,t).real
+    def exacti(x,y,t):
+        ''' Take the imag part. 
+        '''
+        return exact(x,y,t).imag
+    
+    u0 = np.float64(exactr(X,Y,0))
+    v0 = np.float64(exacti(X,Y,0))
+    u1 = np.float64(exactr(X,Y,1))
+    v1 = np.float64(exacti(X,Y,1))
+
     '''
     Setting up the environment. 
     '''
@@ -78,8 +90,7 @@ def runSim(width,steps,snapshot,name):
     global_vars = global_vars + "\n __constant double cy = %s;" %(cy)
     global_vars = global_vars + "\n __constant double v2x = %s;" %(v2x)
     global_vars = global_vars + "\n __constant double v2y = %s;" %(v2y)
-    
-    print global_vars
+
 
     filenames = ['fdm.h', 'regions.h', 'operators.h', 'functions.c']
     # Catenate all the files into a single peice of code.
@@ -94,87 +105,29 @@ def runSim(width,steps,snapshot,name):
     '''
     Creating simulation.
     ''' 
-    wave = fd.Field(env,[u0,u1],[v0,v1],program, update_function = gfdtd_abc,multistep_modifier=3) #create the wave object
-    #print wave.update_function
+    wave = fd.Field(env,[u0,u1],[v0,v1],program) #create the wave object
 
     wave.field_from_device() #take the field from the device
     field_list = [wave] #Simulation needs list of fields
     sim = fd.Simulation(field_list,dt=0.1,dx=1) #make the simluation
-    
+
+
+    #prg = program.build()
     prg = program.build()
 
     queue = env.queue
 
-    data = np.array( [ wave.values_real[1] + 1j*wave.values_imag[1] ] )
-    for iter in range(steps):
-        if (iter % snapshot == 0):
-            #colorer(iter)
-            data = np.stack(data)
-            wave.field_from_device()
-            thewave = np.array( [ wave.values_real[1] + 1j*wave.values_imag[1] ] )
-            data = np.append(data,thewave, axis=0)
-            print iter*dt
-            None
+    for i in range(steps):
         sim.update()
-    print data.shape
-    file = name+".npy"
-    np.save(file,data)
+    #prg.test(queue, wave.shape, None, wave.values_real_dev, wave.values_imag_dev)
+    wave.field_from_device()
+    thewave = wave.values_real[1]**2+wave.values_imag[1]**2
+    plt.imshow(thewave,interpolation='nearest',cmap=full_viridis,norm=colors.LogNorm(vmin=10**(-5),vmax=1))
+    plt.title('width = %s, steps = %s'%(width,steps))
+    plt.show()
     
-    return data
-    
-def gfdtd_abc(object):
-    """
-    This is the wrapper for the G-FDTD scheme written with OpenCL in C.
-    """
-    op_A = object.prg.operator_A
-    gfdtd = object.prg.gfdtd
-    bc = object.prg.abc
-    restore = object.prg.restore
-    
-    U = object.values_real_dev
-    V = object.values_imag_dev
-    ctx = object.compute_node.context
-    queue = object.compute_node.queue
-    # need to calculate A1_ and A3_. A_2 is a dummy
-    for substep in [2,3]:
-        substep = np.int64(substep)
-        op_A( queue, object.shape, None, U, V, substep)
-        #op_A(queue, object.shape, None, A1_U, A1_V, A2_U, A2_V,substep)
-        #op_A(queue, object.shape, None, A2_U, A2_V, A3_U, A3_V,substep)
-        # perform GFDTD calculations
-        gfdtd( queue, object.shape, None, U, V,substep)
-        # reconstruct boundaries
-        bc(queue, object.shape,None,U,V,substep)
-        
-    # set up for next iteration
-    restore(queue, object.shape, None,U,V)
-    return None
-    
-def gfdtd_ebc(object):
-    """
-    This is the wrapper for the G-FDTD scheme written with OpenCL in C.
-    """
-    op_A = object.prg.operator_A
-    gfdtd = object.prg.gfdtd
-    bc = object.prg.ebc
-    restore = object.prg.restore
-    
-    U = object.values_real_dev
-    V = object.values_imag_dev
-    ctx = object.compute_node.context
-    queue = object.compute_node.queue
-    substep = np.int64(object.thestep)
-    
-    op_A( queue, object.shape, None, U, V, substep)
-    # perform GFDTD calculations
-    gfdtd( queue, object.shape, None, U, V,substep)
-    # reconstruct boundaries
-    bc(queue, object.shape,None,U,V,substep)
-        
-    # set up for next iteration
-    restore(queue, object.shape, None,U,V)
-    return None
 
+main(200,4000)
 
 
 
