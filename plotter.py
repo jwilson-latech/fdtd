@@ -15,9 +15,7 @@ from matplotlib.ticker import LogFormatter
 
 
 def Timestep(i):
-    return i
-
-#data = np.load('data.npy')
+    return i*0.8
 
 cmap = full_viridis
     
@@ -37,9 +35,8 @@ def myplots(fig,data):
      
     for i in range(6):
         Z = absolute(data[i])**2
-        print 'PLOTTING'
-        grid[i].set_title(r"$t=%u\Delta t$"%(Timestep(i)),color='black',horizontalalignment='center',verticalalignment='bottom')
-        im = grid[i].imshow(Z, extent=(-2, 2, -2, 2), interpolation="gaussian",origin="lower",cmap=cmap,norm=LogNorm(vmin=1e-4,vmax=1))
+        grid[i].set_title(r"$t=%d$"%(Timestep(i)),color='black',horizontalalignment='center',verticalalignment='bottom')
+        im = grid[i].imshow(Z, extent=(-2, 2, -2, 2), interpolation="gaussian",origin="lower",cmap=cmap,norm=LogNorm(vmin=1e-5,vmax=1))
         grid[i].set_aspect(1.5)
         grid[i].set_xlabel("$x/10$",size=16)
     #plt.colorbar(im, cax = grid.cbar_axes[0])
@@ -80,7 +77,6 @@ def debugplots(fig,data):
     Z=[Z0,Z1,Z2]
     
     for i in range(3):
-        print 'PLOTTING'
         grid[i].set_title(r"$t=%u\Delta t$"%(Timestep(i)),color='black',horizontalalignment='center',verticalalignment='bottom')
         im = grid[i].imshow(Z[i], extent=(-2, 2, -2, 2), interpolation="Nearest",origin="lower",cmap='seismic',vmin=-1,vmax=1)
         grid[i].set_aspect(1.5)
@@ -109,8 +105,8 @@ def plotter(data, fname):
     #plt.show()
     plt.savefig(fname+'.eps')
     
-    
-#plotter(data,'soln')
+data = np.load('soln2dabc.npy')  
+plotter(data,'soln2dabc')
 
 
     

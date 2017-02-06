@@ -384,9 +384,20 @@ __kernel void abc(
                 + sigmax3*( pow(v[id(n-1,j,k)] + v[id(n-1,j+1,k)],2) + pow(u[id(n-1,j,k)] + u[id(n-1,j+1,k)],2) )*( u[id(n-1,j,k)] + u[id(n-1,j+1,k)] );
         }
         
-        else{
-            u[id(n,j,k)] = 0;
-            v[id(n,j,k)] = 0;
+        else if (region_northeast(j,k)){
+
+            u[id(n,j,k)] = u[id(n-2,j,k-1)] 
+                + sigmay0*( u[id(n-2,j,k)] - u[id(n,j,k-1)] )
+                + 0*sigmay1*( Dx_of(v,n-1,j,k) + Dx_of(v,n-1,j,k-1) )
+                + sigmay2*( v[id(n-1,j,k)] + v[id(n-1,j,k-1)] )
+                - sigmay3*( pow(v[id(n-1,j,k)] + v[id(n-1,j,k-1)],2) + pow(u[id(n-1,j,k)] + u[id(n-1,j,k-1)],2) )*( v[id(n-1,j,k)] + v[id(n-1,j,k-1)] );
+        
+            v[id(n,j,k)] = v[id(n-2,j,k-1)] 
+                + sigmay0*( v[id(n-2,j,k)] - v[id(n,j,k-1)] )
+                - 0*sigmay1*( Dx_of(u,n-1,j,k) + Dx_of(u,n-1,j,k-1) ) 
+                - sigmay2*( u[id(n-1,j,k)] + u[id(n-1,j,k-1)] )
+                + sigmay3*( pow(v[id(n-1,j,k)] + v[id(n-1,j,k-1)],2) + pow(u[id(n-1,j,k)] + u[id(n-1,j,k-1)],2) )*( u[id(n-1,j,k)] + u[id(n-1,j,k-1)] );
+                
         }
     
     }
@@ -396,69 +407,27 @@ __kernel void abc(
 __kernel void ebc(
     __global double * u, 
     __global double * v,
-    int n){
+    int n,
+    int thestep){
 
 
     int gid_j = get_global_id(1);
     int gid_k = get_global_id(2);
     int j = gid_j % WIDTH;
     int k = gid_k % WIDTH;
+    int Z0 = 50;
 
-    
-    if (region_main(j,k)||region_main1(j,k)){
-        /* Don't do anything here.*/
+    if (region_total(j,k)){
 
+        u[id(2,j,k)] =+cos((2*((j+k)*dx-Z0)-12*thestep*dt))/cosh(((j+k)*dx-Z0)-8*thestep*dt);
+        v[id(2,j,k)] =-sin((2*((j+k)*dx-Z0)-12*thestep*dt))/cosh(((j+k)*dx-Z0)-8*thestep*dt);
+
+        u[id(3,j,k)] =+cos((2*((j+k)*dx-Z0)-12*thestep*dt-6*thestep*dt))/cosh(((j+k)*dx-Z0)-8*thestep*dt-4*dt);
+        v[id(3,j,k)] =-sin((2*((j+k)*dx-Z0)-12*thestep*dt-6*thestep*dt))/cosh(((j+k)*dx-Z0)-8*thestep*dt-4*dt);
     }
-
-    else if (region_east(j,k)||region_north(j,k)){
-        
-        if(n%2==0){
-
-            u[id(n,j,k)] =+cos(2*(dx*(j+k)+10)-4*dt*n)/cosh(dx*(j+k)+10-3*dt*n);
-
-        v[id(n,j,k)] =-sin(2*(dx*(j+k)+10)-4*dt*n)/cosh(dx*(j+k)+10-3*dt*n);
-        }
-        else{
-
-            u[id(n,j,k)] =+cos(2*(dx*(j+k)+10)-4*dt*n)/cosh(dx*(j+k)+10-3*dt*n);
-
-        v[id(n,j,k)] =-sin(2*(dx*(j+k)+10)-4*dt*n)/cosh(dx*(j+k)+10-3*dt*n);
-        }
-        
+    else{
     }
-
     };
-
-        // else if (region_south(j,k)){
-        //
-        //     u[id(n,j,k)] = u[id(n-2,j,k+1)]
-        //         + sigmay0*( u[id(n-2,j,k)] - u[id(n,j,k+1)] )
-        //         + sigmay1*( Dx_of(v,n-1,j,k) + Dx_of(v,n-1,j,k+1) )
-        //         + sigmay2*( v[id(n-1,j,k)] + v[id(n-1,j,k+1)] )
-        //         - sigmay3*( pow(v[id(n-1,j,k)] + v[id(n-1,j,k+1)],2) + pow(u[id(n-1,j,k)] + u[id(n-1,j,k+1)],2) )*( v[id(n-1,j,k)] + v[id(n-1,j,k+1)] );
-        //
-        //     v[id(n,j,k)] = v[id(n-2,j,k+1)]
-        //         + sigmay0*( v[id(n-2,j,k)] - v[id(n,j,k+1)] )
-        //         - sigmay1*( Dx_of(u,n-1,j,k) + Dx_of(u,n-1,j,k+1) )
-        //         - sigmay2*( u[id(n-1,j,k)] + u[id(n-1,j,k-1)] )
-        //         + sigmay3*( pow(v[id(n-1,j,k)] + v[id(n-1,j,k+1)],2) + pow(u[id(n-1,j,k)] + u[id(n-1,j,k+1)],2) )*( u[id(n-1,j,k)] + u[id(n-1,j,k+1)] );
-        //
-        // }
-        //
-        // else if (region_west(j,k)){
-        //
-        //     u[id(n,j,k)] = u[id(n-2,j+1,k)]
-        //         + sigmax0*( u[id(n-2,j,k)] - u[id(n,j+1,k)] )
-        //         + sigmax1*( Dy_of(v,n-1,j,k) + Dy_of(v,n-1,j+1,k) )
-        //         + sigmax2*( v[id(n-1,j,k)] + v[id(n-1,j+1,k)] )
-        //         - sigmax3*( pow(v[id(n-1,j,k)] + v[id(n-1,j+1,k)],2) + pow(u[id(n-1,j,k)] + u[id(n-1,j+1,k)],2) )*( v[id(n-1,j,k)] + v[id(n-1,j+1,k)] );
-        //
-        //     v[id(n,j,k)] = v[id(n-2,j+1,k)]
-        //         + sigmax0*( v[id(n-2,j,k)] - v[id(n,j+1,k)] )
-        //         - sigmax1*( Dy_of(u,n-1,j,k) + Dy_of(u,n-1,j+1,k) )
-        //         - sigmax2*( u[id(n-1,j,k)] + u[id(n-1,j+1,k)] )
-        //         + sigmax3*( pow(v[id(n-1,j,k)] + v[id(n-1,j+1,k)],2) + pow(u[id(n-1,j,k)] + u[id(n-1,j+1,k)],2) )*( u[id(n-1,j,k)] + u[id(n-1,j+1,k)] );
-        // }
     
     
 

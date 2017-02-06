@@ -127,7 +127,7 @@ def main(width,steps):
     plt.show()
     
 
-main(200,4000)
+#main(200,4000)
 
 
 

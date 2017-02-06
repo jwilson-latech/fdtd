@@ -5,7 +5,7 @@ import sys
 
 def nothing(object):
     """
-    Need a function that takes in nothing, does nothing, and returns nothing to serve as placeholder function.
+    Nothing returns nothing. 
     """
     return None
 
@@ -63,8 +63,7 @@ class Field:
         self.thestep = 0
         
     def setup_array_real(self):
-        """
-        Sets up up array of values to use in computation.
+        """Sets up up array of values to use in computation.
         """
         array = np.zeros(self.shape) #array of zeros with new shape
         for element in range(self.multistep):
@@ -72,8 +71,7 @@ class Field:
         return array
     
     def setup_array_imag(self):
-        """
-        Sets up up array of values to use in computation.
+        """Sets up up array of values to use in computation.
         """
         
         array = np.zeros(self.shape) #array of zeros with new shape
@@ -89,6 +87,9 @@ class Field:
         return array_dev
         
     def field_to_device(self):
+        """
+        Moves both real and imaginary parts to device. 
+        """
         self.values_real_dev = self.move_to_device(self.values_real)
         self.values_imag_dev = self.move_to_device(self.values_imag)
         return None
@@ -107,7 +108,8 @@ class Field:
         self.take_from_device(self.values_imag,self.values_imag_dev)
         
     def update(self,simulationtime=None):
-        """Contruct the update function that a NLSE wave will have
+        """Contruct the update function to update the wave
+        a single time step.
         """
         self.update_function(self)
         self.thestep = self.thestep + 1
@@ -130,7 +132,7 @@ class Simulation:
             if "dy" in kwargs:
                 self.dy = kwargs.get('dy',1)
             if "dz" in kwargs: 
-                self.dy = kwargs.get('dz',1)
+                self.dz = kwargs.get('dz',1)
         return        
         
     def update(self):
